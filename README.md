@@ -1,5 +1,5 @@
 # mocs
-"Music On Console" is great, but it can only sort songs alphabetically.
+["Music On Console"](https://github.com/jonsafari/mocp) is great, but it can only sort songs alphabetically.
 Here is a python ncurses gui that allows songs to be sorted.
   - a-z and z-a
   - size small-large and large-small
