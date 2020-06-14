@@ -9,7 +9,7 @@ Here is a python ncurses gui that allows songs to be sorted.
   download files to any folder <br>
   alias mocs="python path/to/sorter.py" #in .bashrc for convenience
   
-  ## Usage
+## Usage
   1. open mocp and navigate to desired folder the quit mocp (but don't kill server)
   2. open mocs <br>
     - vertical arrow keys to scroll songs <br>
@@ -19,3 +19,8 @@ Here is a python ncurses gui that allows songs to be sorted.
     - "s" to stop <br>
     - "m" to toggle through sort modes <br>
     - "esc" to exit program <br>
+
+## Use mocp instead of this to:
+  - search for songs
+  - create and use playlists
+  - change settings/themes/muxing etc.
