@@ -1,5 +1,5 @@
 import curses, locale, multiprocessing, subprocess, shlex, time, os; 
-#TODO: add now playing (how should this interact with changing sort mode?), autoplay
+#TODO: add now playing (how should this interact with changing sort mode?), fix scroll wheel issue
 
 def sorter(filepath, s_type, running_dir):
     temp1_list = os.listdir(filepath);
@@ -40,6 +40,7 @@ def main(stdscr):
     #curse intialization
     curses.use_default_colors();
     curses.curs_set(0);
+    #curses.mouseinterval(200);
     term_h, term_w = stdscr.getmaxyx();
     stdscr.nodelay(True);
     stdscr.box();
@@ -133,7 +134,7 @@ def main(stdscr):
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
                 highlighted_song -= 1;
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
-                if(highlighted_song <= top_of_pad):
+                if(highlighted_song < top_of_pad):
                     top_of_pad -= 1;
                 song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-3);
                 
