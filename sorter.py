@@ -113,7 +113,7 @@ def main(stdscr):
         if(usr_input == 32): #space play/pause
             if(not playing):
                 if(not stopped):
-                    playing = True; #TODO: unpauseing while stopped cause song under selected to play. nothing should happen
+                    playing = True;
                     subprocess.run(["mocp", "-U"]); #unpause
                     stdscr.addstr(term_h-2,term_w-30,"Playing");
             else:
@@ -136,7 +136,7 @@ def main(stdscr):
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
                 if(highlighted_song < top_of_pad):
                     top_of_pad -= 1;
-                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-3);
+                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
                 
         if(usr_input == 258): #s down
             if(highlighted_song < len(song_list)-1):
@@ -145,7 +145,7 @@ def main(stdscr):
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
                 if(highlighted_song >= top_of_pad + term_h-3):
                     top_of_pad += 1;
-                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-3);
+                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
         
         
         if(usr_input == 260): #song seeking
@@ -165,7 +165,7 @@ def main(stdscr):
             top_of_pad = 0; #reset to top of screen
             highlighted_song = 0;
             song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
-            song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-3);
+            song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
             stdscr.addstr(term_h-2,term_w-9,"        "); #redraw sort mode on screen
             stdscr.addstr(term_h-2,term_w-20,"sort mode: " + sort_types[sort_mode]);
             
