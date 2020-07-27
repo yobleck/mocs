@@ -50,9 +50,9 @@ def main(stdscr):
     running_dir = os.getcwd();
     current_dir = open("/home/yobleck/.moc/last_directory","r").readline(); #TODO: make this navigable without opening mocp
     sort_types = ["date_rev", "date",  "size", "size_rev", "a-z", "z-a"];
-    sort_mode = 0;
+    sort_mode = 0; #TODO: set initial sort mode from ini file
     stdscr.addstr(term_h-2,term_w-20,"sort mode: " + sort_types[sort_mode]);
-    stdscr.addstr(term_h-2,term_w-30,"Stopped");
+    
     
     #pad where list of songs is shown to the user
     song_pad = curses.newpad(len(os.listdir(current_dir)),100); #this assumes no file names over 100 char
@@ -65,21 +65,29 @@ def main(stdscr):
     #highlighting song to be selected
     highlighted_song = 0;
     selected_song = None; #not being used
-    playing = False;
-    stopped = True;
-    song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE); #this is screwed up by jp chars greater than 1 width
+    if(subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout[0:11] == b'State: PLAY'):
+        playing = True; #if song is already playing on server when mocs is opened
+        stopped = False;
+        stdscr.addstr(term_h-2,term_w-30,"Playing");
+    else:
+        playing = False;
+        stopped = True;
+        stdscr.addstr(term_h-2,term_w-30,"Stopped");
+    
+    song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE); #this is messed up by chars > 1 width
     song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
     
     #autoplay next song
-    autoplay = True; #TODO:read from file later
+    autoplay = True; #TODO:read from ini file later
     
     temp = None;
+    loop_count = 1;
     running = True;
     while(running):
         usr_input = stdscr.getch(); #get user input
         
         if(usr_input != -1): #show key press
-            stdscr.addstr(term_h-2,1,"    ");
+            stdscr.addstr(term_h-2,1,"    "); #clears screen
             stdscr.addstr(term_h-2,1,str(usr_input));
         
         if(usr_input == 27): #esc close program
@@ -90,11 +98,17 @@ def main(stdscr):
             playing = True;
             stopped = False;
             subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
+            temp = None; #stops autoplay from skipping selected song
             stdscr.addstr(term_h-2,term_w-30,"Playing");
             
         #autoplay
-        #""" #sorta works but cant connect to server error. WHATS CAUSING IT?!?!?!?
-        temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout;
+        #"""         #what should this number be to minimize lag while not having a lonb pause between songs?
+        if(loop_count%100 == 0 and autoplay and playing and not stopped):
+            temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout;
+            loop_count = 0;
+        loop_count += 1;
+        #"""
+        #temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout;
         if(autoplay and playing and usr_input != 10 and not stopped and temp == b'State: STOP\n'): #checks if song playing
             if(highlighted_song < len(song_list)-1): #this is just copy and pasted from down arrow key
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
@@ -102,12 +116,13 @@ def main(stdscr):
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
                 if(highlighted_song >= top_of_pad + term_h-3):
                     top_of_pad += 1;
-                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-3);
+                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
                 time.sleep(.5); #can't connect to server error without this
                 subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
+                temp = None;
             else:
-                playing = False;
-            #"""
+                playing = False; #should stopped = True here? or will that break pause behavior
+                #stopped = True;
             
         
         if(usr_input == 32): #space play/pause
@@ -170,7 +185,7 @@ def main(stdscr):
             stdscr.addstr(term_h-2,term_w-20,"sort mode: " + sort_types[sort_mode]);
             
     
-        #time.sleep(.01); #reduce cpu usage and stop loop from spamming?
+        time.sleep(.01); #reduce cpu usage and stop loop from spamming?
     #end while loop
 #end main
 
