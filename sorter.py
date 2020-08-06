@@ -30,7 +30,7 @@ def sorter(filepath, s_type, running_dir):
     return temp2_list;
 
 def show_list(current_dir, sort_types, sort_mode, song_list, song_pad, running_dir): #actual drawing of list of songs on pad
-    song_list = sorter(current_dir, sort_types[sort_mode], running_dir);
+    #song_list = sorter(current_dir, sort_types[sort_mode], running_dir);
     for i in range(0,len(song_list)):
         song_pad.addstr(i,0,song_list[i]);
     pass;
@@ -55,7 +55,7 @@ def main(stdscr):
     
     
     #pad where list of songs is shown to the user
-    song_pad = curses.newpad(len(os.listdir(current_dir)),100); #this assumes no file names over 100 char
+    song_pad = curses.newpad(len(os.listdir(current_dir)),100); #this assumes no file names over 100 char TODO: work after song added or removed
     top_of_pad = 0;
     
     #initial sorting and showing of songs
@@ -99,11 +99,11 @@ def main(stdscr):
             stopped = False;
             subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
             temp = None; #stops autoplay from skipping selected song
-            stdscr.addstr(term_h-2,14,chr(32)*40); #clear
+            stdscr.addstr(term_h-2,14,chr(32)*40); #clear TODO: doesnt work properly with extra width chars
             stdscr.addstr(term_h-2,14,str(song_list[highlighted_song])[:40]); #show mow playing on screen TODO: get info from mocp -i
             stdscr.addstr(term_h-2,5,"Playing");
             
-        #autoplay
+        #Autoplay
                      #what should this number be to minimize lag while not having a long pause between songs?
         if(loop_count%200 == 0 and autoplay and playing and not stopped and usr_input != 10):
             temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout; #get server status
