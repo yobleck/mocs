@@ -68,11 +68,11 @@ def main(stdscr):
     if(subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout[0:11] == b'State: PLAY'):
         playing = True; #if song is already playing on server when mocs is opened
         stopped = False;
-        stdscr.addstr(term_h-2,term_w-30,"Playing");
+        stdscr.addstr(term_h-2,5,"Playing");
     else:
         playing = False;
         stopped = True;
-        stdscr.addstr(term_h-2,term_w-30,"Stopped");
+        stdscr.addstr(term_h-2,5,"Stopped");
     
     song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE); #this is messed up by chars > 1 width
     song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
@@ -80,8 +80,8 @@ def main(stdscr):
     #autoplay next song
     autoplay = True; #TODO:read from ini file later
     
-    temp = None;
-    loop_count = 1;
+    temp = None; #holds server status
+    loop_count = 1; #for checking if song is finished
     running = True;
     while(running):
         usr_input = stdscr.getch(); #get user input
@@ -99,49 +99,54 @@ def main(stdscr):
             stopped = False;
             subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
             temp = None; #stops autoplay from skipping selected song
-            stdscr.addstr(term_h-2,term_w-30,"Playing");
+            stdscr.addstr(term_h-2,14,chr(32)*40); #clear
+            stdscr.addstr(term_h-2,14,str(song_list[highlighted_song])[:40]); #show mow playing on screen TODO: get info from mocp -i
+            stdscr.addstr(term_h-2,5,"Playing");
             
         #autoplay
-        #"""         #what should this number be to minimize lag while not having a lonb pause between songs?
-        if(loop_count%100 == 0 and autoplay and playing and not stopped):
-            temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout;
+                     #what should this number be to minimize lag while not having a long pause between songs?
+        if(loop_count%200 == 0 and autoplay and playing and not stopped and usr_input != 10):
+            temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout; #get server status
             loop_count = 0;
-        loop_count += 1;
-        #"""
-        #temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout;
-        if(autoplay and playing and usr_input != 10 and not stopped and temp == b'State: STOP\n'): #checks if song playing
-            if(highlighted_song < len(song_list)-1): #this is just copy and pasted from down arrow key
-                song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
-                highlighted_song += 1;
-                song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
-                if(highlighted_song >= top_of_pad + term_h-3):
-                    top_of_pad += 1;
-                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
-                time.sleep(.5); #can't connect to server error without this
-                subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
-                temp = None;
-            else:
-                playing = False; #should stopped = True here? or will that break pause behavior
-                #stopped = True;
             
+            if(temp == b'State: STOP\n'): #check if song playing
+                if(highlighted_song < len(song_list)-1): #this is just copy and pasted from down arrow key
+                    song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
+                    highlighted_song += 1;
+                    song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
+                    if(highlighted_song >= top_of_pad + term_h-3):
+                        top_of_pad += 1;
+                    song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
+                    time.sleep(.4); #can't connect to server error without this
+                    subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
+                    stdscr.addstr(term_h-2,14,chr(32)*40);
+                    stdscr.addstr(term_h-2,14,str(song_list[highlighted_song])[:40]);
+                    temp = None; #resets server status
+                else:
+                    playing = False; #should stopped = True here? or will that break pause behavior
+                    #stopped = True;
+        loop_count += 1;
+        
+        #TODO: next and provious song. maybe package autoplay into a function and call that
         
         if(usr_input == 32): #space play/pause
             if(not playing):
                 if(not stopped):
                     playing = True;
                     subprocess.run(["mocp", "-U"]); #unpause
-                    stdscr.addstr(term_h-2,term_w-30,"Playing");
+                    stdscr.addstr(term_h-2,5,"Playing");
             else:
                 if(not stopped):
                     playing = False;
                     subprocess.run(["mocp", "-P"]); #pause
-                    stdscr.addstr(term_h-2,term_w-30,"Paused ");
+                    stdscr.addstr(term_h-2,5,"Paused ");
         
         if(usr_input == 115): #s stop
             playing = False;
             stopped = True;
             subprocess.run(["mocp", "-s"]);
-            stdscr.addstr(term_h-2,term_w-30,"Stopped");
+            stdscr.addstr(term_h-2,14,chr(32)*40);
+            stdscr.addstr(term_h-2,5,"Stopped");
         
         
         if(usr_input == 259): #w up
