@@ -29,16 +29,23 @@ def sorter(filepath, s_type, running_dir):
         os.chdir(running_dir);
     return temp2_list;
 
+##############################
+
 def show_list(current_dir, sort_types, sort_mode, song_list, song_pad, running_dir): #actual drawing of list of songs on pad
     #song_list = sorter(current_dir, sort_types[sort_mode], running_dir);
     for i in range(0,len(song_list)):
         song_pad.addstr(i,0,song_list[i]);
     pass;
 
+##############################
 
 def main(stdscr):
     #curse intialization
+    curses.start_color();
     curses.use_default_colors();
+    curses.init_pair(1,curses.COLOR_BLUE,-1); #play
+    curses.init_pair(2,curses.COLOR_RED,-1); #stop
+    curses.init_pair(3,curses.COLOR_YELLOW,-1); #pause
     curses.curs_set(0);
     #curses.mouseinterval(200);
     term_h, term_w = stdscr.getmaxyx();
@@ -51,7 +58,7 @@ def main(stdscr):
     current_dir = open("/home/yobleck/.moc/last_directory","r").readline(); #TODO: make this navigable without opening mocp
     sort_types = ["date_rev", "date",  "size", "size_rev", "a-z", "z-a"];
     sort_mode = 0; #TODO: set initial sort mode from ini file
-    stdscr.addstr(term_h-2,term_w-20,"sort mode: " + sort_types[sort_mode]);
+    stdscr.addstr(term_h-3,term_w-20,"sort mode: " + sort_types[sort_mode],curses.A_UNDERLINE|curses.A_ITALIC);
     
     
     #pad where list of songs is shown to the user
@@ -68,14 +75,14 @@ def main(stdscr):
     if(subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout[0:11] == b'State: PLAY'):
         playing = True; #if song is already playing on server when mocs is opened
         stopped = False;
-        stdscr.addstr(term_h-2,5,"Playing");
+        stdscr.addstr(term_h-3,5,"Playing",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(1));
     else:
         playing = False;
         stopped = True;
-        stdscr.addstr(term_h-2,5,"Stopped");
+        stdscr.addstr(term_h-3,5,"Stopped",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(2));
     
     song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE); #this is messed up by chars > 1 width
-    song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
+    song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
     
     #autoplay next song
     autoplay = True; #TODO:read from ini file later
@@ -87,8 +94,8 @@ def main(stdscr):
         usr_input = stdscr.getch(); #get user input
         
         if(usr_input != -1): #show key press
-            stdscr.addstr(term_h-2,1,"    "); #clears screen
-            stdscr.addstr(term_h-2,1,str(usr_input));
+            stdscr.addstr(term_h-3,1,"    "); #clears screen
+            stdscr.addstr(term_h-3,1,str(usr_input));
         
         if(usr_input == 27): #esc close program
             running = False;
@@ -99,9 +106,9 @@ def main(stdscr):
             stopped = False;
             subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
             temp = None; #stops autoplay from skipping selected song
-            stdscr.addstr(term_h-2,14,chr(32)*40); #clear TODO: doesnt work properly with extra width chars
-            stdscr.addstr(term_h-2,14,str(song_list[highlighted_song])[:40]); #show mow playing on screen TODO: get info from mocp -i
-            stdscr.addstr(term_h-2,5,"Playing");
+            stdscr.addstr(term_h-2,1,chr(32)*70); #clear TODO: doesnt work properly with extra width chars
+            stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show mow playing on screen TODO: get info from mocp -i
+            stdscr.addstr(term_h-3,5,"Playing",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(1));
             
         #Autoplay
                      #what should this number be to minimize lag while not having a long pause between songs?
@@ -116,11 +123,11 @@ def main(stdscr):
                     song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
                     if(highlighted_song >= top_of_pad + term_h-3):
                         top_of_pad += 1;
-                    song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
+                    song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
                     time.sleep(.4); #can't connect to server error without this
                     subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
-                    stdscr.addstr(term_h-2,14,chr(32)*40);
-                    stdscr.addstr(term_h-2,14,str(song_list[highlighted_song])[:40]);
+                    stdscr.addstr(term_h-2,1,chr(32)*70);
+                    stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1));
                     temp = None; #resets server status
                 else:
                     playing = False; #should stopped = True here? or will that break pause behavior
@@ -134,19 +141,19 @@ def main(stdscr):
                 if(not stopped):
                     playing = True;
                     subprocess.run(["mocp", "-U"]); #unpause
-                    stdscr.addstr(term_h-2,5,"Playing");
+                    stdscr.addstr(term_h-3,5,"Playing",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(1));
             else:
                 if(not stopped):
                     playing = False;
                     subprocess.run(["mocp", "-P"]); #pause
-                    stdscr.addstr(term_h-2,5,"Paused ");
+                    stdscr.addstr(term_h-3,5,"Paused ",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(3));
         
         if(usr_input == 115): #s stop
             playing = False;
             stopped = True;
             subprocess.run(["mocp", "-s"]);
-            stdscr.addstr(term_h-2,14,chr(32)*40);
-            stdscr.addstr(term_h-2,5,"Stopped");
+            stdscr.addstr(term_h-2,1,chr(32)*70); #clear now playing
+            stdscr.addstr(term_h-3,5,"Stopped",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(2));
         
         
         if(usr_input == 259): #w up
@@ -156,16 +163,16 @@ def main(stdscr):
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
                 if(highlighted_song < top_of_pad):
                     top_of_pad -= 1;
-                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
+                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
                 
         if(usr_input == 258): #s down
             if(highlighted_song < len(song_list)-1):
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
                 highlighted_song += 1;
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
-                if(highlighted_song >= top_of_pad + term_h-3):
+                if(highlighted_song >= top_of_pad + term_h-4):
                     top_of_pad += 1;
-                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
+                song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
         
         
         if(usr_input == 260): #song seeking
@@ -185,9 +192,9 @@ def main(stdscr):
             top_of_pad = 0; #reset to top of screen
             highlighted_song = 0;
             song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
-            song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-3,term_w-2);
-            stdscr.addstr(term_h-2,term_w-9,"        "); #redraw sort mode on screen
-            stdscr.addstr(term_h-2,term_w-20,"sort mode: " + sort_types[sort_mode]);
+            song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
+            stdscr.addstr(term_h-3,term_w-9,"        "); #redraw sort mode on screen
+            stdscr.addstr(term_h-3,term_w-20,"sort mode: " + sort_types[sort_mode],curses.A_UNDERLINE|curses.A_ITALIC);
             
     
         time.sleep(.01); #reduce cpu usage and stop loop from spamming?
