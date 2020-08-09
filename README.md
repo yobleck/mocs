@@ -18,9 +18,13 @@ Here is a python ncurses gui that allows songs to be sorted.
     - "space" to pause/unpause <br>
     - "s" to stop <br>
     - "m" to toggle through sort modes <br>
+    - "a" to toggle autoplay <br>
     - "esc" to exit program <br>
 
 ## Use mocp instead of this to:
   - search for songs
   - create and use playlists
   - change settings/themes/muxing etc.
+
+## WIP <br>
+this mocp alternate frontend is WIP. It may have feature parity in the future, or maybe not since all this program does is call the commandline through the python subprocess module and present the results.
