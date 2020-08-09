@@ -1,5 +1,4 @@
 import curses, locale, multiprocessing, subprocess, shlex, time, os; 
-#TODO: add now playing (how should this interact with changing sort mode?), fix scroll wheel issue
 
 def sorter(filepath, s_type, running_dir):
     temp1_list = os.listdir(filepath);
@@ -39,6 +38,17 @@ def show_list(current_dir, sort_types, sort_mode, song_list, song_pad, running_d
 
 ##############################
 
+def write_play_state(state, scr): #TODO: make this change the values of playing and stopped vars. should there be paused var?
+    if(state == "Playing"):
+        scr.addstr(term_h-3,5,"Playing",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(1));
+    if(state == "Stopped"):
+        scr.addstr(term_h-2,1,chr(32)*70); #clear now playing
+        scr.addstr(term_h-3,5,"Stopped",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(2));
+    if(state == "Paused "):
+        scr.addstr(term_h-3,5,"Paused ",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(3));
+
+##############################
+
 def main(stdscr):
     #curse intialization
     curses.start_color();
@@ -48,8 +58,10 @@ def main(stdscr):
     curses.init_pair(3,curses.COLOR_YELLOW,-1); #pause
     curses.curs_set(0);
     #curses.mouseinterval(200);
+    global term_h, term_w; #the value of these should never change once set
     term_h, term_w = stdscr.getmaxyx();
     stdscr.nodelay(True);
+    stdscr.keypad(True);
     stdscr.box();
     stdscr.refresh();
     
@@ -75,17 +87,18 @@ def main(stdscr):
     if(subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout[0:11] == b'State: PLAY'):
         playing = True; #if song is already playing on server when mocs is opened
         stopped = False;
-        stdscr.addstr(term_h-3,5,"Playing",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(1));
+        write_play_state("Playing",stdscr);
     else:
         playing = False;
         stopped = True;
-        stdscr.addstr(term_h-3,5,"Stopped",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(2));
+        write_play_state("Stopped",stdscr);
     
     song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE); #this is messed up by chars > 1 width
     song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
     
     #autoplay next song
     autoplay = True; #TODO:read from ini file later
+    stdscr.addstr(term_h-3,15,"Autoplay",curses.color_pair(1));
     
     temp = None; #holds server status
     loop_count = 1; #for checking if song is finished
@@ -108,52 +121,69 @@ def main(stdscr):
             temp = None; #stops autoplay from skipping selected song
             stdscr.addstr(term_h-2,1,chr(32)*70); #clear TODO: doesnt work properly with extra width chars
             stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show mow playing on screen TODO: get info from mocp -i
-            stdscr.addstr(term_h-3,5,"Playing",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(1));
-            
-        #Autoplay
+            write_play_state("Playing",stdscr);
+        
+        if(usr_input == 97): # a toggle autoplay
+            if(autoplay):
+                autoplay = False;
+                stdscr.addstr(term_h-3,15,"Autoplay",curses.color_pair(2));
+            else:
+                autoplay = True;
+                stdscr.addstr(term_h-3,15,"Autoplay",curses.color_pair(1));
+        
+        #Autoplay    TODO: fix scroll wheel issue
                      #what should this number be to minimize lag while not having a long pause between songs?
-        if(loop_count%200 == 0 and autoplay and playing and not stopped and usr_input != 10):
-            temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout; #get server status
+        if(loop_count%200 == 0 and playing and not stopped and usr_input != 10):
             loop_count = 0;
+            temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout; #get server status
             
-            if(temp == b'State: STOP\n'): #check if song playing
-                if(highlighted_song < len(song_list)-1): #this is just copy and pasted from down arrow key
-                    song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
-                    highlighted_song += 1;
-                    song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
-                    if(highlighted_song >= top_of_pad + term_h-3):
-                        top_of_pad += 1;
-                    song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
-                    time.sleep(.4); #can't connect to server error without this
-                    subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
-                    stdscr.addstr(term_h-2,1,chr(32)*70);
-                    stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1));
-                    temp = None; #resets server status
-                else:
-                    playing = False; #should stopped = True here? or will that break pause behavior
-                    #stopped = True;
+            if(autoplay):
+                if(temp == b'State: STOP\n'): #check if song playing
+                    if(highlighted_song < len(song_list)-1): #this is just copy and pasted from down arrow key
+                        song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
+                        highlighted_song += 1;
+                        song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
+                        if(highlighted_song >= top_of_pad + term_h-4):
+                            top_of_pad += 1;
+                        song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
+                        time.sleep(.4); #can't connect to server error without this
+                        subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
+                        stdscr.addstr(term_h-2,1,chr(32)*70);
+                        stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1));
+                        temp = None; #resets server status
+                    else:
+                        playing = False; #should stopped = True here? or will that break pause behavior
+                        stopped = True;
+                        write_play_state("Stopped",stdscr);
+            else:
+                if(temp == b'State: STOP\n'):
+                    playing = False;
+                    stopped = True;
+                    write_play_state("Stopped",stdscr);
+                    
         loop_count += 1;
         
         #TODO: next and provious song. maybe package autoplay into a function and call that
+        #TODO: volume control through mocp -v (+/-)number
+        #TODO: build shuffle, autonext, repeat into autoplay?
         
-        if(usr_input == 32): #space play/pause
+        if(usr_input == 32): #space play/pause TODO: simplify by running mocp --toggle-pause?
             if(not playing):
                 if(not stopped):
                     playing = True;
                     subprocess.run(["mocp", "-U"]); #unpause
-                    stdscr.addstr(term_h-3,5,"Playing",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(1));
+                    write_play_state("Playing",stdscr);
             else:
                 if(not stopped):
                     playing = False;
                     subprocess.run(["mocp", "-P"]); #pause
-                    stdscr.addstr(term_h-3,5,"Paused ",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(3));
+                    write_play_state("Paused ",stdscr);
         
         if(usr_input == 115): #s stop
             playing = False;
             stopped = True;
             subprocess.run(["mocp", "-s"]);
-            stdscr.addstr(term_h-2,1,chr(32)*70); #clear now playing
-            stdscr.addstr(term_h-3,5,"Stopped",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(2));
+            write_play_state("Stopped",stdscr);
         
         
         if(usr_input == 259): #w up
