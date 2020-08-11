@@ -120,7 +120,7 @@ def main(stdscr):
             subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
             temp = None; #stops autoplay from skipping selected song
             stdscr.addstr(term_h-2,1,chr(32)*70); #clear TODO: doesnt work properly with extra width chars
-            stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show mow playing on screen TODO: get info from mocp -i
+            stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show now playing on screen TODO: get info from mocp -i
             write_play_state("Playing",stdscr);
         
         if(usr_input == 97): # a toggle autoplay
@@ -165,7 +165,7 @@ def main(stdscr):
         
         #TODO: next and provious song. maybe package autoplay into a function and call that
         #TODO: volume control through mocp -v (+/-)number
-        #TODO: build shuffle, autonext, repeat into autoplay?
+        #TODO: build shuffle, repeat into player
         
         if(usr_input == 32): #space play/pause TODO: simplify by running mocp --toggle-pause?
             if(not playing):
@@ -205,10 +205,15 @@ def main(stdscr):
                 song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
         
         
-        if(usr_input == 260): #song seeking
+        if(usr_input == 260): #song seeking TODO: show volume on screen
             subprocess.run(["mocp", "-k", "-1"]);
         if(usr_input == 261):
             subprocess.run(["mocp", "-k", "1"]);
+            
+        if(usr_input == 44): #PCM volume control
+            subprocess.run(["mocp", "-v", "-5"]);
+        if(usr_input == 46):
+            subprocess.run(["mocp", "-v", "+5"]);
         
         
         if(usr_input == 109): #m switch sort modes
