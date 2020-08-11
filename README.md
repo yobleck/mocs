@@ -19,6 +19,8 @@ Here is a python ncurses gui that allows songs to be sorted.
     - "s" to stop <br>
     - "m" to toggle through sort modes <br>
     - "a" to toggle autoplay <br>
+    - "," volume down 5%
+    - "." volume up 5%
     - "esc" to exit program <br>
 
 ## Use mocp instead of this to:
