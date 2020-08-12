@@ -1,4 +1,4 @@
-import curses, locale, multiprocessing, subprocess, shlex, time, os; 
+import curses, locale, multiprocessing, subprocess, shlex, time, os, re; 
 
 def sorter(filepath, s_type, running_dir):
     temp1_list = os.listdir(filepath);
@@ -65,6 +65,7 @@ def main(stdscr):
     stdscr.box();
     stdscr.refresh();
     
+    
     #songs initialization
     running_dir = os.getcwd();
     current_dir = open("/home/yobleck/.moc/last_directory","r").readline(); #TODO: make this navigable without opening mocp
@@ -77,9 +78,11 @@ def main(stdscr):
     song_pad = curses.newpad(len(os.listdir(current_dir)),100); #this assumes no file names over 100 char TODO: work after song added or removed
     top_of_pad = 0;
     
+    
     #initial sorting and showing of songs
     song_list = sorter(current_dir, sort_types[sort_mode], running_dir);
     show_list(current_dir, sort_types, sort_mode, song_list, song_pad, running_dir);
+    
     
     #highlighting song to be selected
     highlighted_song = 0;
@@ -96,9 +99,15 @@ def main(stdscr):
     song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE); #this is messed up by chars > 1 width
     song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
     
+    
     #autoplay next song
     autoplay = True; #TODO:read from ini file later
     stdscr.addstr(term_h-3,15,"Autoplay",curses.color_pair(1));
+    
+    
+    #volume
+    volume = int(re.search("Value: " + "(.+?)\\n",[i for i in open("../softmixer","r").readlines() if "Value: " in i][0]).group(1));
+    stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
     
     temp = None; #holds server status
     loop_count = 1; #for checking if song is finished
@@ -109,6 +118,7 @@ def main(stdscr):
         if(usr_input != -1): #show key press
             stdscr.addstr(term_h-3,1,"    "); #clears screen
             stdscr.addstr(term_h-3,1,str(usr_input));
+        
         
         if(usr_input == 27): #esc close program
             running = False;
@@ -123,6 +133,7 @@ def main(stdscr):
             stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show now playing on screen TODO: get info from mocp -i
             write_play_state("Playing",stdscr);
         
+        
         if(usr_input == 97): # a toggle autoplay
             if(autoplay):
                 autoplay = False;
@@ -130,6 +141,7 @@ def main(stdscr):
             else:
                 autoplay = True;
                 stdscr.addstr(term_h-3,15,"Autoplay",curses.color_pair(1));
+        
         
         #Autoplay    TODO: fix scroll wheel issue
                      #what should this number be to minimize lag while not having a long pause between songs?
@@ -163,8 +175,7 @@ def main(stdscr):
                     
         loop_count += 1;
         
-        #TODO: next and provious song. maybe package autoplay into a function and call that
-        #TODO: volume control through mocp -v (+/-)number
+        #TODO: next and provious song. maybe package autoplay into a function and call that or figure out how to properly queue files
         #TODO: build shuffle, repeat into player
         
         if(usr_input == 32): #space play/pause TODO: simplify by running mocp --toggle-pause?
@@ -178,6 +189,7 @@ def main(stdscr):
                     playing = False;
                     subprocess.run(["mocp", "-P"]); #pause
                     write_play_state("Paused ",stdscr);
+        
         
         if(usr_input == 115): #s stop
             playing = False;
@@ -205,15 +217,20 @@ def main(stdscr):
                 song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
         
         
-        if(usr_input == 260): #song seeking TODO: show volume on screen
+        if(usr_input == 260): #song seeking
             subprocess.run(["mocp", "-k", "-1"]);
         if(usr_input == 261):
             subprocess.run(["mocp", "-k", "1"]);
-            
-        if(usr_input == 44): #PCM volume control
+        
+        
+        if(usr_input == 44): #PCM volume control      TODO: how to handle volume change from mocp or file edit?
             subprocess.run(["mocp", "-v", "-5"]);
+            volume -= 5;
+            stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
         if(usr_input == 46):
             subprocess.run(["mocp", "-v", "+5"]);
+            volume += 5;
+            stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
         
         
         if(usr_input == 109): #m switch sort modes
