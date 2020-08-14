@@ -106,7 +106,7 @@ def main(stdscr):
     
     
     #volume
-    volume = int(re.search("Value: " + "(.+?)\\n",[i for i in open("../softmixer","r").readlines() if "Value: " in i][0]).group(1));
+    volume = int(re.search("Value: " + "(.+?)\\n",[i for i in open("/home/yobleck/.moc/softmixer","r").readlines() if "Value: " in i][0]).group(1));
     stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
     
     temp = None; #holds server status
