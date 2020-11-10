@@ -1,4 +1,4 @@
-import curses, locale, multiprocessing, subprocess, shlex, time, os, re; 
+import curses, locale, subprocess, shlex, time, os, re, progress_bar; #multiprocessing
 
 def sorter(filepath, s_type, running_dir):
     temp1_list = os.listdir(filepath);
@@ -44,6 +44,7 @@ def write_play_state(state, scr): #TODO: make this change the values of playing 
     if(state == "Stopped"):
         scr.addstr(term_h-2,1,chr(32)*70); #clear now playing
         scr.addstr(term_h-3,5,"Stopped",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(2));
+        scr.addstr(term_h-1,1,progress_bar.progress_bar(0, bar_length=term_w-15, prnt=False)+"0/0        ");
     if(state == "Paused "):
         scr.addstr(term_h-3,5,"Paused ",curses.A_UNDERLINE|curses.A_ITALIC|curses.color_pair(3));
 
@@ -129,7 +130,7 @@ def main(stdscr):
             stopped = False;
             subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
             temp = None; #stops autoplay from skipping selected song
-            stdscr.addstr(term_h-2,1,chr(32)*70); #clear TODO: doesnt work properly with extra width chars
+            stdscr.addstr(term_h-2,1,chr(32)*70); #clear TODO: doesnt work properly with extra width chars   see wcwidth
             stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show now playing on screen TODO: get info from mocp -i
             write_play_state("Playing",stdscr);
         
@@ -145,7 +146,7 @@ def main(stdscr):
         
         #Autoplay    TODO: fix scroll wheel issue
                      #what should this number be to minimize lag while not having a long pause between songs?
-        if(loop_count%200 == 0 and playing and not stopped and usr_input != 10):
+        if(loop_count%100 == 0 and playing and not stopped and usr_input != 10):
             loop_count = 0;
             temp = subprocess.run(["mocp", "-i"],stdout=subprocess.PIPE,stderr=open(os.devnull, 'w')).stdout; #get server status
             
@@ -162,7 +163,7 @@ def main(stdscr):
                         subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
                         stdscr.addstr(term_h-2,1,chr(32)*70);
                         stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1));
-                        temp = None; #resets server status
+                        #temp = None; #resets server status
                     else:
                         playing = False; #should stopped = True here? or will that break pause behavior
                         stopped = True;
@@ -175,8 +176,21 @@ def main(stdscr):
                     
         loop_count += 1;
         
-        #TODO: next and provious song. maybe package autoplay into a function and call that or figure out how to properly queue files
+        #TODO: next and previous song. maybe package autoplay into a function and call that or figure out how to properly queue files
         #TODO: build shuffle, repeat into player
+        #TODO: replace hard coded screen pos values with relative values
+        
+        #Progress bar
+        if(playing and temp and loop_count%50 == 0): #and temp != b"State: STOP\n"
+            temp_list = temp.decode("utf-8").split("\n");
+            for x in temp_list:
+                if("TotalSec:" in x):
+                    total_sec = int(re.findall(r"\d+", x)[0]);
+                if("CurrentSec:" in x):
+                    curr_sec = int(re.findall(r"\d+", x)[0]);
+            stdscr.addstr(term_h-1,1,
+                          progress_bar.progress_bar(curr_sec/total_sec, bar_length=term_w-15, prnt=False)+str(curr_sec)+"/"+str(total_sec));
+        
         
         if(usr_input == 32): #space play/pause TODO: simplify by running mocp --toggle-pause?
             if(not playing):
@@ -223,13 +237,15 @@ def main(stdscr):
             subprocess.run(["mocp", "-k", "1"]);
         
         
-        if(usr_input == 44): #PCM volume control      TODO: how to handle volume change from mocp or file edit?
+        if(usr_input == 44 and volume >= 5): #PCM volume control      TODO: how to handle volume change from mocp or file edit?
             subprocess.run(["mocp", "-v", "-5"]);
             volume -= 5;
+            stdscr.addstr(term_h-3,24,"Vol:   ");
             stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
-        if(usr_input == 46):
+        if(usr_input == 46 and volume <= 95):
             subprocess.run(["mocp", "-v", "+5"]);
             volume += 5;
+            stdscr.addstr(term_h-3,24,"Vol:   ");
             stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
         
         
