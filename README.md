@@ -29,4 +29,10 @@ Here is a python ncurses gui that allows songs to be sorted.
   - change settings/themes/muxing etc.
 
 ## WIP <br>
-this mocp alternate frontend is WIP. It may have feature parity in the future, or maybe not since all this program does is call the commandline through the python subprocess module and present the results.
+This mocp alternate frontend is WIP. It may have feature parity in the future, or maybe not since all this program does is call the commandline through the python subprocess module and present the results.
+
+## Known Issues:
+    - holding enter key breaks UI
+    - a number of UI elements have hardcoded postions and may look wrong for small terminals (should work with 80 col x 20 row and up)
+    - prgress bar doesn't clear screen properly
+    - crude interface with mocp server
