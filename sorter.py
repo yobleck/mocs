@@ -131,7 +131,7 @@ def main(stdscr):
             subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
             temp = None; #stops autoplay from skipping selected song
             stdscr.addstr(term_h-2,1,chr(32)*70); #clear TODO: doesnt work properly with extra width chars   see wcwidth
-            stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show now playing on screen TODO: get info from mocp -i
+            stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show now playing on screen TODO: get info from mocp -i see progress bar
             write_play_state("Playing",stdscr);
         
         
@@ -188,6 +188,7 @@ def main(stdscr):
                     total_sec = int(re.findall(r"\d+", x)[0]);
                 if("CurrentSec:" in x):
                     curr_sec = int(re.findall(r"\d+", x)[0]);
+            stdscr.addstr(term_h-1,1," "*(term_w-2));
             stdscr.addstr(term_h-1,1,
                           progress_bar.progress_bar(curr_sec/total_sec, bar_length=term_w-15, prnt=False)+str(curr_sec)+"/"+str(total_sec));
         
