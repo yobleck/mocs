@@ -34,5 +34,5 @@ This mocp alternate frontend is WIP. It may have feature parity in the future, o
 ## Known Issues:
     - holding enter key breaks UI
     - a number of UI elements have hardcoded postions and may look wrong for small terminals (should work with 80 col x 20 row and up)
-    - pr0gress bar and some other elements may flicker on less robust terminals
+    - progress bar and some other elements may flicker on less robust terminals
     - crude interface with mocp server
