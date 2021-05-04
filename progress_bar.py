@@ -35,5 +35,5 @@ if __name__ == "__main__":
         if(sys.argv[1] == "t"):
             timer_bar(sys.argv[2]);
         if(sys.argv[1] == "p"):
-            progress_bar(sys.argv[2]);
+            progress_bar(float(sys.argv[2]));
     #globals()[sys.argv[1]](sys.argv[2]);
