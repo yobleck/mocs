@@ -128,7 +128,7 @@ def main(stdscr):
         if(usr_input == 10): #enter start playing
             playing = True;
             stopped = False;
-            subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
+            subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]], stderr=open(os.devnull, 'w'));
             temp = None; #stops autoplay from skipping selected song
             stdscr.addstr(term_h-2,1,chr(32)*70); #clear TODO: doesnt work properly with extra width chars   see wcwidth
             stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1)); #show now playing on screen TODO: get info from mocp -i see progress bar
@@ -160,7 +160,7 @@ def main(stdscr):
                             top_of_pad += 1;
                         song_pad.refresh(top_of_pad,0 ,1,1 ,term_h-4,term_w-2);
                         time.sleep(.4); #can't connect to server error without this
-                        subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]]);
+                        subprocess.run(["mocp", "-l", current_dir + "/" + song_list[highlighted_song]], stderr=open(os.devnull, 'w'));
                         stdscr.addstr(term_h-2,1,chr(32)*70);
                         stdscr.addstr(term_h-2,1,str(song_list[highlighted_song])[:70],curses.color_pair(1));
                         #temp = None; #resets server status
@@ -197,24 +197,24 @@ def main(stdscr):
             if(not playing):
                 if(not stopped):
                     playing = True;
-                    subprocess.run(["mocp", "-U"]); #unpause
+                    subprocess.run(["mocp", "-U"], stderr=open(os.devnull, 'w')); #unpause
                     write_play_state("Playing",stdscr);
             else:
                 if(not stopped):
                     playing = False;
-                    subprocess.run(["mocp", "-P"]); #pause
+                    subprocess.run(["mocp", "-P"], stderr=open(os.devnull, 'w')); #pause
                     write_play_state("Paused ",stdscr);
         
         
         if(usr_input == 115): #s stop
             playing = False;
             stopped = True;
-            subprocess.run(["mocp", "-s"]);
+            subprocess.run(["mocp", "-s"], stderr=open(os.devnull, 'w'));
             write_play_state("Stopped",stdscr);
         
         
         if(usr_input == 259): #w up
-            if(highlighted_song > 0):
+            if(highlighted_song > 0): #TODO: replace chgat with addnstr so highlight lines up with jp char
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_NORMAL);
                 highlighted_song -= 1;
                 song_pad.chgat(highlighted_song,0,min(len(song_list[highlighted_song]), term_w-2),curses.A_REVERSE);
@@ -233,18 +233,18 @@ def main(stdscr):
         
         
         if(usr_input == 260): #song seeking
-            subprocess.run(["mocp", "-k", "-1"]);
+            subprocess.run(["mocp", "-k", "-1"], stderr=open(os.devnull, 'w'));
         if(usr_input == 261):
-            subprocess.run(["mocp", "-k", "1"]);
+            subprocess.run(["mocp", "-k", "1"], stderr=open(os.devnull, 'w'));
         
         
         if(usr_input == 44 and volume >= 5): #PCM volume control      TODO: how to handle volume change from mocp or file edit?
-            subprocess.run(["mocp", "-v", "-5"]);
+            subprocess.run(["mocp", "-v", "-5"], stderr=open(os.devnull, 'w'));
             volume -= 5;
             stdscr.addstr(term_h-3,24,"Vol:   ");
             stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
         if(usr_input == 46 and volume <= 95):
-            subprocess.run(["mocp", "-v", "+5"]);
+            subprocess.run(["mocp", "-v", "+5"], stderr=open(os.devnull, 'w'));
             volume += 5;
             stdscr.addstr(term_h-3,24,"Vol:   ");
             stdscr.addstr(term_h-3,24,"Vol:" + str(volume),curses.color_pair(3));
@@ -270,6 +270,6 @@ def main(stdscr):
     #end while loop
 #end main
 
-locale.setlocale(locale.LC_ALL, '')
-os.environ.setdefault('ESCDELAY', '25') #why do I not need this in gtav_radio.py?
+locale.setlocale(locale.LC_ALL, '');
+os.environ.setdefault('ESCDELAY', '25'); #why do I not need this in gtav_radio.py?
 curses.wrapper(main);
