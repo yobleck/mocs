@@ -86,9 +86,10 @@ def moc_sync() -> dict:
          'Bitrate': '0',
          'AvgBitrate': '0',
          'Rate': '0'}
-    in_list = subprocess.run("mocp -i", shell=True, stdout=subprocess.PIPE).stdout.decode().splitlines()
-    for i in in_list:
-        d[i.split(": ")[0]] = i.split(": ")[1]
+    in_list = subprocess.run("mocp -i", shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE).stdout.decode().splitlines()
+    if in_list:  # TODO handle server not running?
+        for i in in_list:
+            d[i.split(": ")[0]] = i.split(": ")[1]
     return d
 
 
@@ -113,16 +114,21 @@ def folder_sort(folder: str, sort_mode: str, reverse: bool = False) -> list:
 def add_songs_to_playlist_and_play(songs: list, start_pos: int, folder: str) -> None:
     # TODO remove starting pos var? and use splice when calling
     # TODO loop around
-    subprocess.run(f"mocp -c", shell=True)
+    # songs = list(songs)
+    i = 0
+    subprocess.run(f"mocp -s; mocp -c", shell=True)
     for s in songs[start_pos:]:
         if s[-1] != "/" and s[-4:] != ".m3u":
             # -a option allows for multiple files to be added in one command
             # but they are added to playlist instead of queue
             # -q queue can't be cleared from command line
-            # TODO replace loop with list comprehension that combines all parameters into one string
-            # log(shlex.quote(folder + s))
-            subprocess.run(f"mocp -a {shlex.quote(folder + s)}", shell=True, stderr=subprocess.PIPE)
-    subprocess.run(f"mocp -p", shell=True)
+            # TODO replace loop with list comprehension that combines all parameters into one string. BUG unknown error
+            subprocess.Popen(f"mocp -a {shlex.quote(folder + s)}", shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            if i == 0:
+                time.sleep(0.1)  # allows Popen() to finish before playing
+                subprocess.run(f"mocp -p", shell=True)  # play first song while waiting for playlist to populate
+                i += 1
+            time.sleep(0.01)
 
 
 help_scrn: str = "MOCS2 HELP SCREEN"  # TODO
@@ -156,7 +162,7 @@ class UI():
     sort_reversed: bool = config["sort_reversed"]
 
     song_list: list = folder_sort(current_folder, sort_mode, sort_reversed)  # list(range(100))
-    list_slice: tuple = (0, scrn_size[1] - 4)  # (top, bottom)
+    list_slice: tuple = (0, scrn_size[1] - 6)  # (top, bottom). - x for progress bar
     selected_song: int = 0  # between 0 and len(song_list)
     current_song_info: dict = moc_sync()
     volume: int = config["volume"]
@@ -167,12 +173,20 @@ class UI():
         """draw borders, slice of list of files, highlight currently playing and selected, play/pause/stop state
         then call update_prog_bar
         """
-        if key == "\n":
-            key = "entr"
-        print(f"\x1b[0;0H\x1b[Kkey pressed: {key}. sort mode: {cls.sort_mode} reversed: {cls.sort_reversed} folder: {cls.current_folder}")  # temp
+        # if key == "\n":
+        #     key = "entr"
+        # print(f"\x1b[0;0H\x1b[Kkey pressed: {key}. sort mode: {cls.sort_mode} reversed: {cls.sort_reversed} folder: {cls.current_folder}")  # temp
+        print(f"\x1b[0;0H\x1b[K┌─┤MOCS2├{'─' * 10}┤{cls.current_folder}├{'─' * (cls.scrn_size[0] - len(cls.current_folder) - 22)}┐")
+        # ┌─┐
         for num, song in enumerate(cls.song_list[cls.list_slice[0]:cls.list_slice[1] + 1]):  # + 1 to include last item
             # TODO colors
-            print(f"\x1b[K{num + cls.list_slice[0]}. {song} {'<--'*(num + cls.list_slice[0] == cls.selected_song)}")
+            print(f"\x1b[K│{num + cls.list_slice[0]:03d} {song} {'<--'*(num + cls.list_slice[0] == cls.selected_song)}"
+                  f"{' ' * (cls.scrn_size[0] - len(song) - 7 - (3 * (num + cls.list_slice[0] == cls.selected_song)))}│")
+        for _ in range(cls.scrn_size[1] - num - 6):
+            print(f"\x1b[K│{' ' * (cls.scrn_size[0] - 2)}│")  # any filler space if list is shorter than screen
+
+        print(f"\x1b[K├{'─' * (cls.scrn_size[0] - 2)}┤")  # bottom of list
+        # BUG duplicating songs with jp characters in them. possibly due to extra width chars
         # print("\x1b[0m")
 
     @classmethod
@@ -180,8 +194,10 @@ class UI():
         # https://cloford.com/resources/charcodes/utf-8_box-drawing.htm
         cls.current_song_info = moc_sync()
 
-        print(f"\x1b[{cls.scrn_size[1]- 1};0H\x1b[K{cls.current_song_info['State']} > {cls.current_song_info['Title']}")
-        print(f"\x1b[{cls.scrn_size[1]};0H\x1b[K{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
+        print(f"\x1b[{cls.scrn_size[1] - 2};0H\x1b[K│{cls.current_song_info['State']} > {cls.current_song_info['Title']}")
+        print(f"\x1b[{cls.scrn_size[1] - 1};0H\x1b[K│sort mode: [{cls.sort_mode}]  reversed: [{cls.sort_reversed}]")
+
+        print(f"\x1b[{cls.scrn_size[1]};0H\x1b[K├─┤{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
               f" [{cls.current_song_info['TotalTime']}] {cls.progress_bar()}")
         # print("\x1b[0m")
 
@@ -208,9 +224,10 @@ class UI():
     @classmethod
     def progress_bar(cls) -> str:
         # calculate what the progress bar should look like
-        bar_width = cls.scrn_size[0] - 22  # all other characters on line add up to 22
+        bar_width = cls.scrn_size[0] - 12 - len(cls.current_song_info["CurrentTime"]) -\
+            len(cls.current_song_info["TimeLeft"]) - len(cls.current_song_info["TotalTime"])  # other characters on line add up to 12
         percent = int(cls.current_song_info["CurrentSec"]) / int(cls.current_song_info["TotalSec"])
-        return f"┤{'█' * int(percent * bar_width)}{' ' * int((1 - percent) * bar_width)}├"  # █ = \u2588, ┤ = \u2524, ├ = \u251c
+        return f"┤{'█' * int(percent * bar_width)}{' ' * int((1 - percent) * bar_width)}├─┘"  # █ = \u2588, ┤ = \u2524, ├ = \u251c
 
     @classmethod
     def enter(cls) -> None:
@@ -222,15 +239,12 @@ class UI():
                 cls.selected_song = 0
             else:  # go into a folder
                 cls.current_folder = cls.current_folder + cls.song_list[cls.selected_song]
-                log(cls.current_folder)
                 cls.song_list = folder_sort(cls.current_folder, cls.sort_mode, cls.sort_reversed)
                 cls.selected_song = 0
         elif cls.song_list[cls.selected_song][-4:] == ".m3u":
             pass  # TODO implement playlists?
         else:  # play song and add other songs to playlist
             add_songs_to_playlist_and_play(cls.song_list, cls.selected_song, cls.current_folder)
-            # s = subprocess.run(f"mocp -l {shlex.quote(cls.current_folder + cls.song_list[cls.selected_song])}", shell=True, stderr=subprocess.PIPE)
-            # log(s)
 
     @classmethod
     def cycle_sort(cls):
@@ -262,7 +276,7 @@ config.update({  # default config values that have to be defined after UI()
 })
 
 
-class RepeatTimer(threading.Timer):
+class RepeatTimer(threading.Timer):  # TODO sync timer to song start?
     def run(self):
         while not self.finished.wait(self.interval):
             self.function(*self.args, **self.kwargs)
@@ -290,8 +304,6 @@ if __name__ == "__main__":
                 config["key_binds"][char]()
         elif char == "q":
             break
-        elif char == "i":  # temp
-            UI.current_song_info = moc_sync()
         elif char in config["key_binds"].keys():
             config["key_binds"][char]()
 
