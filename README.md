@@ -30,6 +30,7 @@ Here is a python ncurses gui that allows songs to be sorted.
 
 ## WIP <br>
 This mocp alternate frontend is WIP. It may have feature parity in the future, or maybe not since all this program does is call the commandline through the python subprocess module and present the results.
+V2 in progress
 
 ## Known Issues:
     - holding enter key breaks UI
