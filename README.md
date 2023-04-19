@@ -6,8 +6,9 @@ Here is a python ncurses gui that allows songs to be sorted.
   - date modified old-new and new-old
   
   ## Installation
-  download files to any folder <br>
-  alias mocs="python path/to/sorter.py" #in .bashrc for convenience
+  download files to any folder nut usually ~/.moc/sort/<br>
+  alias mocs="python path/to/sorter.py" #in .bashrc for convenience<br>
+  depends on python, mocp, and the python packages setproctitle and wcwidth
   
 ## Usage
   1. open mocp and navigate to desired folder the quit mocp (but don't kill server)
