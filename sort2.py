@@ -13,6 +13,7 @@ import threading
 import time
 
 import setproctitle
+import wcwidth
 
 
 # TODO move stand alone functions into utils.py?
@@ -24,7 +25,7 @@ def log(i):
 def sig_handler(sig, frame):
     if sig == signal.SIGINT:
         print("\x1b[2J\x1b[H\x1b[?25h", end="")
-        # TODO cancel timer
+        timer.cancel()
         sys.exit(0)
     elif sig == signal.SIGWINCH:
         print("screen size updated")
@@ -115,7 +116,7 @@ def add_songs_to_playlist_and_play(songs: list, start_pos: int, folder: str) -> 
     # TODO remove starting pos var? and use splice when calling
     # TODO loop around
     # songs = list(songs)
-    i = 0
+    is_first_song = True
     subprocess.run(f"mocp -s; mocp -c", shell=True)
     for s in songs[start_pos:]:
         if s[-1] != "/" and s[-4:] != ".m3u":
@@ -124,10 +125,10 @@ def add_songs_to_playlist_and_play(songs: list, start_pos: int, folder: str) -> 
             # -q queue can't be cleared from command line
             # TODO replace loop with list comprehension that combines all parameters into one string. BUG unknown error
             subprocess.Popen(f"mocp -a {shlex.quote(folder + s)}", shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
-            if i == 0:
+            if is_first_song:
                 time.sleep(0.1)  # allows Popen() to finish before playing
                 subprocess.run(f"mocp -p", shell=True)  # play first song while waiting for playlist to populate
-                i += 1
+                is_first_song = False
             time.sleep(0.01)
 
 
@@ -173,20 +174,18 @@ class UI():
         """draw borders, slice of list of files, highlight currently playing and selected, play/pause/stop state
         then call update_prog_bar
         """
-        # if key == "\n":
-        #     key = "entr"
-        # print(f"\x1b[0;0H\x1b[Kkey pressed: {key}. sort mode: {cls.sort_mode} reversed: {cls.sort_reversed} folder: {cls.current_folder}")  # temp
         print(f"\x1b[0;0H\x1b[K┌─┤MOCS2├{'─' * 10}┤{cls.current_folder}├{'─' * (cls.scrn_size[0] - len(cls.current_folder) - 22)}┐")
         # ┌─┐
         for num, song in enumerate(cls.song_list[cls.list_slice[0]:cls.list_slice[1] + 1]):  # + 1 to include last item
             # TODO colors
+            # list of files
             print(f"\x1b[K│{num + cls.list_slice[0]:03d} {song} {'<--'*(num + cls.list_slice[0] == cls.selected_song)}"
-                  f"{' ' * (cls.scrn_size[0] - len(song) - 7 - (3 * (num + cls.list_slice[0] == cls.selected_song)))}│")
+                  f"{' ' * (cls.scrn_size[0] - wcwidth.wcswidth(song) - (3 * (num + cls.list_slice[0] == cls.selected_song)) - 7)}│")
         for _ in range(cls.scrn_size[1] - num - 6):
-            print(f"\x1b[K│{' ' * (cls.scrn_size[0] - 2)}│")  # any filler space if list is shorter than screen
+            # filler border if files < height of window
+            print(f"\x1b[K│{' ' * (cls.scrn_size[0] - 2)}│")
 
         print(f"\x1b[K├{'─' * (cls.scrn_size[0] - 2)}┤")  # bottom of list
-        # BUG duplicating songs with jp characters in them. possibly due to extra width chars
         # print("\x1b[0m")
 
     @classmethod
@@ -194,12 +193,25 @@ class UI():
         # https://cloford.com/resources/charcodes/utf-8_box-drawing.htm
         cls.current_song_info = moc_sync()
 
-        print(f"\x1b[{cls.scrn_size[1] - 2};0H\x1b[K│{cls.current_song_info['State']} > {cls.current_song_info['Title']}")
-        print(f"\x1b[{cls.scrn_size[1] - 1};0H\x1b[K│sort mode: [{cls.sort_mode}]  reversed: [{cls.sort_reversed}]")
-
+        # status and name of song # TODO use cls.current_song_info['File'] if Title is empty
+        print(f"\x1b[{cls.scrn_size[1] - 2};0H\x1b[K│{cls.current_song_info['State']} > {cls.current_song_info['Title']}"
+              f"{' ' * (cls.scrn_size[0] - len(cls.current_song_info['State']) - wcwidth.wcswidth(cls.current_song_info['Title']) - 5)}│")
+        # sort mode TODO other info
+        print(f"\x1b[{cls.scrn_size[1] - 1};0H\x1b[K│sort mode: [{cls.sort_mode}]  reversed: [{cls.sort_reversed}]"
+              f"{' ' * (cls.scrn_size[0] - len(cls.sort_mode + str(cls.sort_reversed)) - 29)}│")
+        # progress bar
         print(f"\x1b[{cls.scrn_size[1]};0H\x1b[K├─┤{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
               f" [{cls.current_song_info['TotalTime']}] {cls.progress_bar()}")
         # print("\x1b[0m")
+
+    @classmethod
+    def progress_bar(cls) -> str:
+        # calculate what the progress bar should look like
+        # BUG inconsistent rounding changes bar length?
+        bar_width = cls.scrn_size[0] - 12 - len(cls.current_song_info["CurrentTime"]) -\
+            len(cls.current_song_info["TimeLeft"]) - len(cls.current_song_info["TotalTime"])  # other characters on line add up to 12
+        percent = int(cls.current_song_info["CurrentSec"]) / int(cls.current_song_info["TotalSec"])
+        return f"┤{'█' * int(percent * bar_width)}{' ' * int((1 - percent) * bar_width)}├─┘"  # █ = \u2588, ┤ = \u2524, ├ = \u251c
 
     @classmethod
     def scroll(cls, amount: int) -> None:
@@ -218,16 +230,6 @@ class UI():
         elif cls.selected_song < cls.list_slice[0]:  # scroll up
             shift = cls.list_slice[0] - cls.selected_song
             cls.list_slice = (cls.list_slice[0] - shift, cls.list_slice[1] - shift)
-
-        # print(f"\x1b[{cls.scrn_size[1]};0H\x1b[Kselected: {cls.selected_song}")
-
-    @classmethod
-    def progress_bar(cls) -> str:
-        # calculate what the progress bar should look like
-        bar_width = cls.scrn_size[0] - 12 - len(cls.current_song_info["CurrentTime"]) -\
-            len(cls.current_song_info["TimeLeft"]) - len(cls.current_song_info["TotalTime"])  # other characters on line add up to 12
-        percent = int(cls.current_song_info["CurrentSec"]) / int(cls.current_song_info["TotalSec"])
-        return f"┤{'█' * int(percent * bar_width)}{' ' * int((1 - percent) * bar_width)}├─┘"  # █ = \u2588, ┤ = \u2524, ├ = \u251c
 
     @classmethod
     def enter(cls) -> None:
