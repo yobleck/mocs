@@ -16,6 +16,11 @@ import setproctitle
 import wcwidth
 
 
+# Misc global variables
+u_esc = "\x1b["  # no backslashes in f strings
+invt_clr = "\x1b[7m"  # move to UI?
+
+
 # TODO move stand alone functions into utils.py?
 def log(i):
     with open("/home/yobleck/.moc/sort/test.log", "a") as f:
@@ -38,7 +43,7 @@ def getch(blocking: bool = True, bytes_to_read: int = 1) -> str:
     new = list(old_settings)
     new[3] &= ~(termios.ICANON | termios.ECHO)
     new[6][termios.VMIN] = 1 if blocking else 0
-    new[6][termios.VTIME] = 1  # 0 is faster but inputs appear on screen?
+    new[6][termios.VTIME] = 0  # 0 is faster but inputs appear on screen?
     termios.tcsetattr(fd, termios.TCSADRAIN, new)
     try:
         ch = sys.stdin.read(bytes_to_read)
@@ -100,11 +105,11 @@ def folder_sort(folder: str, sort_mode: str, reverse: bool = False) -> list:
                            f"--group-directories-first '{folder}'",
                            shell=True, stdout=subprocess.PIPE).stdout.decode().splitlines()
 
-    to_remove = []
+    to_remove = []  # removing files from a list while iterating over it causes skips
     for i, f in enumerate(files):
         if f[-1] == "/":
             continue
-        elif f[-4:] not in [".mp3", ".wav", ".ogg", ".oga", ".m4a", ".aac", "flac", ".m3u"]:
+        elif f[-4:] not in [".aac", "flac", ".mp3", ".m3u", ".m4a", ".ogg", ".oga", ".wav", ".wma"]:
             to_remove.append(f)
     for r in to_remove:
         files.remove(r)
@@ -123,7 +128,8 @@ def add_songs_to_playlist_and_play(songs: list, start_pos: int, folder: str) -> 
             # -a option allows for multiple files to be added in one command
             # but they are added to playlist instead of queue
             # -q queue can't be cleared from command line
-            # TODO replace loop with list comprehension that combines all parameters into one string. BUG unknown error
+            # TODO replace loop with list comprehension that combines all parameters into one string
+            # BUG argc buffer limit. 10 songs at a time?
             subprocess.Popen(f"mocp -a {shlex.quote(folder + s)}", shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
             if is_first_song:
                 time.sleep(0.1)  # allows Popen() to finish before playing
@@ -137,9 +143,15 @@ help_scrn: str = "MOCS2 HELP SCREEN"  # TODO
 config: dict = {  # default config values that don't rely on any other code for their definition
     "update_rate": 1,  # seconds
     "volume": 50,  # 0-100%
+    "starting_folder": os.path.expanduser("~") + "/",
     "sort_mode": "name",  # options include "name", "time", and "size"
     "sort_reversed": False,
-    "starting_folder": os.path.expanduser("~") + "/",
+    "main_clr": "32",  # these colors are ansi colors in the format "\u001b[foreground_color;background_color"
+    "dir_clr": "31",  # https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797#color-codes
+    "file_clr": "32",
+    "m3u_clr": "34",
+    "bg_clr": "40",  # background color uses the background color code
+    "misc_clr": "36",
 }
 # parse config file
 if os.path.exists("./mocs_settings.json"):
@@ -174,19 +186,25 @@ class UI():
         """draw borders, slice of list of files, highlight currently playing and selected, play/pause/stop state
         then call update_prog_bar
         """
-        print(f"\x1b[0;0H\x1b[K┌─┤MOCS2├{'─' * 10}┤{cls.current_folder}├{'─' * (cls.scrn_size[0] - len(cls.current_folder) - 22)}┐")
-        # ┌─┐
+        print(f"\x1b[0;0H\x1b[K{u_esc + config['main_clr'] + 'm'}┌─┤MOCS2├{'─' * 10}┤{cls.current_folder}├"
+              f"{'─' * (cls.scrn_size[0] - len(cls.current_folder) - 22)}┐")  # ┌─┐
+
         for num, song in enumerate(cls.song_list[cls.list_slice[0]:cls.list_slice[1] + 1]):  # + 1 to include last item
-            # TODO colors
+            # line color
+            if song[-1] == "/":
+                line_color = u_esc + config["dir_clr"] + "m"
+            elif song[-4:] == ".m3u":
+                line_color = u_esc + config["m3u_clr"] + "m"
+            else:
+                line_color = u_esc + config["file_clr"] + "m"
             # list of files
-            print(f"\x1b[K│{num + cls.list_slice[0]:03d} {song} {'<--'*(num + cls.list_slice[0] == cls.selected_song)}"
-                  f"{' ' * (cls.scrn_size[0] - wcwidth.wcswidth(song) - (3 * (num + cls.list_slice[0] == cls.selected_song)) - 7)}│")
+            print(f"\x1b[K│{num + cls.list_slice[0]:04d} {line_color}{invt_clr*(num + cls.list_slice[0] == cls.selected_song)}{song}\x1b[27m"
+                  f"{' ' * (cls.scrn_size[0] - wcwidth.wcswidth(song) - 7)}{u_esc + config['main_clr'] + 'm'}│")
         for _ in range(cls.scrn_size[1] - num - 6):
             # filler border if files < height of window
-            print(f"\x1b[K│{' ' * (cls.scrn_size[0] - 2)}│")
+            print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}│{' ' * (cls.scrn_size[0] - 2)}│{u_esc + config['main_clr'] + 'm'}")
 
-        print(f"\x1b[K├{'─' * (cls.scrn_size[0] - 2)}┤")  # bottom of list
-        # print("\x1b[0m")
+        print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}├{'─' * (cls.scrn_size[0] - 2)}┤{u_esc + config['main_clr'] + 'm'}")  # bottom of list
 
     @classmethod
     def draw_status_bar(cls) -> None:
@@ -194,15 +212,17 @@ class UI():
         cls.current_song_info = moc_sync()
 
         # status and name of song # TODO use cls.current_song_info['File'] if Title is empty
-        print(f"\x1b[{cls.scrn_size[1] - 2};0H\x1b[K│{cls.current_song_info['State']} > {cls.current_song_info['Title']}"
-              f"{' ' * (cls.scrn_size[0] - len(cls.current_song_info['State']) - wcwidth.wcswidth(cls.current_song_info['Title']) - 5)}│")
+        print(f"\x1b[{cls.scrn_size[1] - 2};0H\x1b[K{u_esc + config['main_clr'] + 'm'}"
+              f"│{cls.current_song_info['State']} > {cls.current_song_info['Title']}"
+              f"{' ' * (cls.scrn_size[0] - len(cls.current_song_info['State']) - wcwidth.wcswidth(cls.current_song_info['Title']) - 5)}│{u_esc + config['main_clr'] + 'm'}")
         # sort mode TODO other info
-        print(f"\x1b[{cls.scrn_size[1] - 1};0H\x1b[K│sort mode: [{cls.sort_mode}]  reversed: [{cls.sort_reversed}]"
-              f"{' ' * (cls.scrn_size[0] - len(cls.sort_mode + str(cls.sort_reversed)) - 29)}│")
+        print(f"\x1b[{cls.scrn_size[1] - 1};0H\x1b[K│{u_esc}{config['misc_clr'] + 'm'}"
+              f"sort mode: [{cls.sort_mode}]  reversed: [{cls.sort_reversed}]"
+              f"{' ' * (cls.scrn_size[0] - len(cls.sort_mode + str(cls.sort_reversed)) - 29)}{u_esc + config['main_clr'] + 'm'}│")
         # progress bar
-        print(f"\x1b[{cls.scrn_size[1]};0H\x1b[K├─┤{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
+        print(f"\x1b[{cls.scrn_size[1]};0H\x1b[K{u_esc + config['main_clr'] + 'm'}"
+              f"├─┤{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
               f" [{cls.current_song_info['TotalTime']}] {cls.progress_bar()}")
-        # print("\x1b[0m")
 
     @classmethod
     def progress_bar(cls) -> str:
@@ -260,19 +280,21 @@ class UI():
 
 
 config.update({  # default config values that have to be defined after UI()
-    "key_binds": {" ": partial(subprocess.run, "mocp -G", shell=True),  # move to config?
-                  "S": partial(subprocess.run, "mocp -s; mocp -c", shell=True),
-                  "w": partial(UI.scroll, -1),
-                  "s": partial(UI.scroll, 1),
-                  "up": partial(UI.scroll, -1),
-                  "dn": partial(UI.scroll, 1),
-                  "lf": partial(subprocess.run, "mocp -k -1", shell=True),
-                  "rt": partial(subprocess.run, "mocp -k 1", shell=True),
-                  "pgup": partial(UI.scroll, -10),
-                  "pgdn": partial(UI.scroll, 10),
-                  "\n": partial(UI.enter),
-                  "m": partial(UI.cycle_sort),
-                  "M": partial(UI.reverse_sort),
+    "key_binds": {" ": partial(subprocess.run, "mocp -G", shell=True),  # play/pause
+                  "s": partial(subprocess.run, "mocp -s; mocp -c", shell=True),  # stop and clear playlist
+                  "n": partial(subprocess.run, "mocp -f", shell=True),  # next song
+                  "b": partial(subprocess.run, "mocp -n", shell=True),  # previous song
+                  ",": partial(subprocess.run, "mocp -v -5", shell=True),  # vol -5%
+                  ".": partial(subprocess.run, "mocp -v +5", shell=True),  # vol +5%
+                  "up": partial(UI.scroll, -1),  # scroll up
+                  "dn": partial(UI.scroll, 1),  # scroll down
+                  "lf": partial(subprocess.run, "mocp -k -1", shell=True),  # seek -1 s
+                  "rt": partial(subprocess.run, "mocp -k 1", shell=True),  # seek +1 s
+                  "pgup": partial(UI.scroll, -10),  # scroll up 10 at a time
+                  "pgdn": partial(UI.scroll, 10),  # scroll down 10 at a time
+                  "\n": partial(UI.enter),  # play song or enter folder
+                  "m": partial(UI.cycle_sort),  # cycle sort modes
+                  "M": partial(UI.reverse_sort),  # toggle sort reverse
                   # "c": clear playlist?
                   },
 })
