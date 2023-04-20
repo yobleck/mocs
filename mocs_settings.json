@@ -3,5 +3,11 @@
     "volume": 50,
     "starting_folder": "/home/yobleck/Music/",
     "sort_mode": "time",
-    "sort_reversed": false
+    "sort_reversed": false,
+    "main_clr": "32",
+    "dir_clr": "31",
+    "file_clr": "32",
+    "m3u_clr": "34",
+    "bg_clr": "40",
+    "misc_clr": "36"
 } 
