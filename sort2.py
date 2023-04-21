@@ -1,11 +1,9 @@
-from enum import Enum
 from functools import partial
 import itertools
 import json
 import os
 import signal
 import shlex
-import shutil
 import subprocess
 import sys
 import termios
@@ -33,8 +31,10 @@ def sig_handler(sig, frame):
         timer.cancel()
         sys.exit(0)
     elif sig == signal.SIGWINCH:
-        print("screen size updated")
-        pass  # update UI.scrn_size
+        UI.scrn_size = list(os.get_terminal_size())
+        UI.scrn_size[1] -= 1
+        UI.draw_list()
+        UI.draw_status_bar()
 
 
 def getch(blocking: bool = True, bytes_to_read: int = 1) -> str:
@@ -140,10 +140,11 @@ def add_songs_to_playlist_and_play(songs: list, start_pos: int, folder: str) -> 
 
 help_scrn: str = "MOCS2 HELP SCREEN"  # TODO
 
+home_dir = os.path.expanduser("~") + "/"
 config: dict = {  # default config values that don't rely on any other code for their definition
     "update_rate": 1,  # seconds
     "volume": 50,  # 0-100%
-    "starting_folder": os.path.expanduser("~") + "/",
+    "starting_folder": home_dir,
     "sort_mode": "name",  # options include "name", "time", and "size"
     "sort_reversed": False,
     "main_clr": "32",  # these colors are ansi colors in the format "\u001b[foreground_color;background_color"
@@ -154,8 +155,8 @@ config: dict = {  # default config values that don't rely on any other code for 
     "misc_clr": "36",
 }
 # parse config file
-if os.path.exists("./mocs_settings.json"):
-    with open("./mocs_settings.json", "r") as f:
+if os.path.exists(f"{home_dir}.moc/mocs_settings.json"):
+    with open(f"{home_dir}.moc/mocs_settings.json", "r") as f:
         temp_dict: dict = json.load(f)
     for k in temp_dict.keys():
         if k in config.keys():
@@ -163,8 +164,8 @@ if os.path.exists("./mocs_settings.json"):
 
 
 class UI():
-    w, h = shutil.get_terminal_size()
-    scrn_size: tuple = (w, h - 1)  # - 1 for kitty weirdness?
+    scrn_size: list = list(os.get_terminal_size())
+    scrn_size[1] -= 1  # - 1 for kitty weirdness?
     current_folder: str = config["starting_folder"]
 
     sort_cycle = itertools.cycle(["name", "size", "time"])
@@ -174,7 +175,7 @@ class UI():
             break
     sort_reversed: bool = config["sort_reversed"]
 
-    song_list: list = folder_sort(current_folder, sort_mode, sort_reversed)  # list(range(100))
+    song_list: list = folder_sort(current_folder, sort_mode, sort_reversed)
     list_slice: tuple = (0, scrn_size[1] - 6)  # (top, bottom). - x for progress bar
     selected_song: int = 0  # between 0 and len(song_list)
     current_song_info: dict = moc_sync()
@@ -182,10 +183,11 @@ class UI():
 
     # TODO colors
     @classmethod
-    def draw_list(cls, key: str) -> None:
+    def draw_list(cls) -> None:
         """draw borders, slice of list of files, highlight currently playing and selected, play/pause/stop state
         then call update_prog_bar
         """
+        # TODO handle file names longer than screen width
         print(f"\x1b[0;0H\x1b[K{u_esc + config['main_clr'] + 'm'}┌─┤MOCS2├{'─' * 10}┤{cls.current_folder}├"
               f"{'─' * (cls.scrn_size[0] - len(cls.current_folder) - 22)}┐")  # ┌─┐
 
@@ -198,13 +200,13 @@ class UI():
             else:
                 line_color = u_esc + config["file_clr"] + "m"
             # list of files
-            print(f"\x1b[K│{num + cls.list_slice[0]:04d} {line_color}{invt_clr*(num + cls.list_slice[0] == cls.selected_song)}{song}\x1b[27m"
-                  f"{' ' * (cls.scrn_size[0] - wcwidth.wcswidth(song) - 7)}{u_esc + config['main_clr'] + 'm'}│")
+            print(f"\x1b[K│{num + cls.list_slice[0]:04d} {line_color}{invt_clr*(num + cls.list_slice[0] == cls.selected_song)}{song}"
+                  f"\x1b[27m{' ' * (cls.scrn_size[0] - wcwidth.wcswidth(song) - 7)}{u_esc + config['main_clr'] + 'm'}│")
         for _ in range(cls.scrn_size[1] - num - 6):
             # filler border if files < height of window
             print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}│{' ' * (cls.scrn_size[0] - 2)}│{u_esc + config['main_clr'] + 'm'}")
-
-        print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}├{'─' * (cls.scrn_size[0] - 2)}┤{u_esc + config['main_clr'] + 'm'}")  # bottom of list
+        # bottom of list
+        print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}├{'─' * (cls.scrn_size[0] - 2)}┤{u_esc + config['main_clr'] + 'm'}")
 
     @classmethod
     def draw_status_bar(cls) -> None:
@@ -214,7 +216,8 @@ class UI():
         # status and name of song # TODO use cls.current_song_info['File'] if Title is empty
         print(f"\x1b[{cls.scrn_size[1] - 2};0H\x1b[K{u_esc + config['main_clr'] + 'm'}"
               f"│{cls.current_song_info['State']} > {cls.current_song_info['Title']}"
-              f"{' ' * (cls.scrn_size[0] - len(cls.current_song_info['State']) - wcwidth.wcswidth(cls.current_song_info['Title']) - 5)}│{u_esc + config['main_clr'] + 'm'}")
+              f"{' ' * (cls.scrn_size[0] - len(cls.current_song_info['State']) - wcwidth.wcswidth(cls.current_song_info['Title']) - 5)}"
+              f"│{u_esc + config['main_clr'] + 'm'}")
         # sort mode TODO other info
         print(f"\x1b[{cls.scrn_size[1] - 1};0H\x1b[K│{u_esc}{config['misc_clr'] + 'm'}"
               f"sort mode: [{cls.sort_mode}]  reversed: [{cls.sort_reversed}]"
@@ -223,6 +226,8 @@ class UI():
         print(f"\x1b[{cls.scrn_size[1]};0H\x1b[K{u_esc + config['main_clr'] + 'm'}"
               f"├─┤{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
               f" [{cls.current_song_info['TotalTime']}] {cls.progress_bar()}")
+        print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}└{'─' * (cls.scrn_size[0] - 2)}┘{u_esc + config['main_clr'] + 'm'}", end="")
+        sys.stdout.flush()
 
     @classmethod
     def progress_bar(cls) -> str:
@@ -231,7 +236,7 @@ class UI():
         bar_width = cls.scrn_size[0] - 12 - len(cls.current_song_info["CurrentTime"]) -\
             len(cls.current_song_info["TimeLeft"]) - len(cls.current_song_info["TotalTime"])  # other characters on line add up to 12
         percent = int(cls.current_song_info["CurrentSec"]) / int(cls.current_song_info["TotalSec"])
-        return f"┤{'█' * int(percent * bar_width)}{' ' * int((1 - percent) * bar_width)}├─┘"  # █ = \u2588, ┤ = \u2524, ├ = \u251c
+        return f"┤{'█' * int(percent * bar_width)}{' ' * int((1 - percent) * bar_width)}├─┤"  # █ = \u2588, ┤ = \u2524, ├ = \u251c
 
     @classmethod
     def scroll(cls, amount: int) -> None:
@@ -315,7 +320,7 @@ if __name__ == "__main__":
     timer.start()
 
     print("\x1b[2J\x1b[H\x1b[?25l")
-    UI.draw_list(" ")
+    UI.draw_list()
     UI.draw_status_bar()
 
     while True:
@@ -331,7 +336,7 @@ if __name__ == "__main__":
         elif char in config["key_binds"].keys():
             config["key_binds"][char]()
 
-        UI.draw_list(char)
+        UI.draw_list()
         UI.draw_status_bar()
 
     # TODO write certain values back out to the config file
