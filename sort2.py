@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import shlex
+import socket
 import subprocess
 import sys
 import termios
@@ -23,6 +24,16 @@ invt_clr = "\x1b[7m"  # move to UI?
 def log(i):
     with open("/home/yobleck/.moc/sort/test.log", "a") as f:
         f.write(f"{time.asctime()}: {str(i)}\n")
+
+
+def tryit(func):
+    def inner(*args, **kwargs):
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            log("tryit error:")
+            log(e)
+    return inner
 
 
 def sig_handler(sig, frame):
@@ -163,6 +174,61 @@ if os.path.exists(f"{home_dir}.moc/mocs_settings.json"):
             config[k] = temp_dict[k]
 
 
+class MOC_Socket():
+    """https://github.com/jonsafari/mocp/blob/master/protocol.h"""
+    address: str = "/home/yobleck/.moc/socket2"  # TODO config option
+    sock = None
+
+    @classmethod
+    def connect(cls):
+        cls.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        cls.sock.connect(cls.address)
+
+    @classmethod
+    def disconnect(cls):
+        cls.sock.shutdown(socket.SHUT_RDWR)
+        cls.sock.close()
+
+    @classmethod
+    @tryit
+    def play_pause(cls):
+        cls.connect()
+        cls.sock.send(b'\x13\x00\x00\x00')
+        while cls.sock.recv(1) != b'\x06':
+            pass
+        cls.sock.recv(3)
+
+        ret = cls.sock.recv(4)
+        if ret == b'\x01\x00\x00\x00':  # playing
+            cls.sock.send(b'\x05\x00\x00\x00')  # pause
+        elif ret == b'\x03\x00\x00\x00':  # paused
+            cls.sock.send(b'\x06\x00\x00\x00')  # play
+
+        cls.disconnect()
+
+    @classmethod
+    @tryit
+    def stop(cls):
+        cls.connect()
+        cls.sock.send(b'\x04\x00\x00\x00')  # stop
+        cls.sock.send(b'\x01\x00\x00\x00')  # clear playlist
+        cls.disconnect()
+
+    @classmethod
+    @tryit
+    def next_song(cls):
+        cls.connect()
+        cls.sock.send(b'\x10\x00\x00\x00')  # next
+        cls.disconnect()
+
+    @classmethod
+    @tryit
+    def prev_song(cls):
+        cls.connect()
+        cls.sock.send(b'\x20\x00\x00\x00')  # prev
+        cls.disconnect()
+
+
 class UI():
     scrn_size: list = list(os.get_terminal_size())
     scrn_size[1] -= 1  # - 1 for kitty weirdness?
@@ -227,7 +293,7 @@ class UI():
               f"├─┤{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
               f" [{cls.current_song_info['TotalTime']}] {cls.progress_bar()}")
         print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}└{'─' * (cls.scrn_size[0] - 2)}┘{u_esc + config['main_clr'] + 'm'}", end="")
-        sys.stdout.flush()
+        sys.stdout.flush()  # BUG flickering caused by last line?
 
     @classmethod
     def progress_bar(cls) -> str:
@@ -285,14 +351,20 @@ class UI():
 
 
 config.update({  # default config values that have to be defined after UI()
-    "key_binds": {" ": partial(subprocess.run, "mocp -G", shell=True),  # play/pause
-                  "s": partial(subprocess.run, "mocp -s; mocp -c", shell=True),  # stop and clear playlist
-                  "n": partial(subprocess.run, "mocp -f", shell=True),  # next song
-                  "b": partial(subprocess.run, "mocp -n", shell=True),  # previous song
+    "key_binds": {" ": partial(MOC_Socket().play_pause),  # play/pause
+                  # " ": partial(subprocess.run, "mocp -G", shell=True),
+                  "s": partial(MOC_Socket.stop),  # stop and clear playlist
+                  # "s": partial(subprocess.run, "mocp -s; mocp -c", shell=True),
+                  "n": partial(MOC_Socket.next_song),  # next song
+                  # "n": partial(subprocess.run, "mocp -f", shell=True),
+                  "b": partial(MOC_Socket.prev_song),  # previous song
+                  # "b": partial(subprocess.run, "mocp -n", shell=True),
+                  # TODO figure out how the volume byte format works
                   ",": partial(subprocess.run, "mocp -v -5", shell=True),  # vol -5%
                   ".": partial(subprocess.run, "mocp -v +5", shell=True),  # vol +5%
                   "up": partial(UI.scroll, -1),  # scroll up
                   "dn": partial(UI.scroll, 1),  # scroll down
+                  # TODO figure out how the seek byte format works
                   "lf": partial(subprocess.run, "mocp -k -1", shell=True),  # seek -1 s
                   "rt": partial(subprocess.run, "mocp -k 1", shell=True),  # seek +1 s
                   "pgup": partial(UI.scroll, -10),  # scroll up 10 at a time
@@ -301,6 +373,9 @@ config.update({  # default config values that have to be defined after UI()
                   "m": partial(UI.cycle_sort),  # cycle sort modes
                   "M": partial(UI.reverse_sort),  # toggle sort reverse
                   # "c": clear playlist?
+                  # "?": help screen
+                  # "/": search function?
+                  # "T": partial(MOC_Socket.stop),  # testing
                   },
 })
 
