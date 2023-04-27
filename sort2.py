@@ -5,6 +5,7 @@ import os
 import signal
 import shlex
 import socket
+import struct
 import subprocess
 import sys
 import termios
@@ -18,18 +19,19 @@ import wcwidth
 # Misc global variables
 u_esc = "\x1b["  # no backslashes in f strings
 invt_clr = "\x1b[7m"  # move to UI?
+home_dir = os.path.expanduser("~") + "/"
 
 
 # TODO move stand alone functions into utils.py?
 def log(i):
-    with open("/home/yobleck/.moc/sort/test.log", "a") as f:
+    with open(f"{home_dir}.moc/sort/test.log", "a") as f:
         f.write(f"{time.asctime()}: {str(i)}\n")
 
 
 def tryit(func):
     def inner(*args, **kwargs):
         try:
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
         except Exception as e:
             log("tryit error:")
             log(e)
@@ -38,12 +40,14 @@ def tryit(func):
 
 def sig_handler(sig, frame):
     if sig == signal.SIGINT:
-        print("\x1b[2J\x1b[H\x1b[?25h", end="")
         timer.cancel()
+        print("\x1b[2J\x1b[H\x1b[?25h", end="")
         sys.exit(0)
     elif sig == signal.SIGWINCH:
+        old_scrn_h = UI.scrn_size[1]
         UI.scrn_size = list(os.get_terminal_size())
         UI.scrn_size[1] -= 1
+        UI.list_slice[1] = UI.list_slice[1] - (old_scrn_h - UI.scrn_size[1])
         UI.draw_list()
         UI.draw_status_bar()
 
@@ -131,27 +135,18 @@ def folder_sort(folder: str, sort_mode: str, reverse: bool = False) -> list:
 def add_songs_to_playlist_and_play(songs: list, start_pos: int, folder: str) -> None:
     # TODO remove starting pos var? and use splice when calling
     # TODO loop around
-    # songs = list(songs)
-    is_first_song = True
-    subprocess.run(f"mocp -s; mocp -c", shell=True)
+    MOC_Socket.clear_queue()
+    time.sleep(0.01)  # TODO replace with read from socket?
     for s in songs[start_pos:]:
         if s[-1] != "/" and s[-4:] != ".m3u":
-            # -a option allows for multiple files to be added in one command
-            # but they are added to playlist instead of queue
-            # -q queue can't be cleared from command line
-            # TODO replace loop with list comprehension that combines all parameters into one string
-            # BUG argc buffer limit. 10 songs at a time?
-            subprocess.Popen(f"mocp -a {shlex.quote(folder + s)}", shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
-            if is_first_song:
-                time.sleep(0.1)  # allows Popen() to finish before playing
-                subprocess.run(f"mocp -p", shell=True)  # play first song while waiting for playlist to populate
-                is_first_song = False
+            MOC_Socket.send_song_to_queue(folder + s)
             time.sleep(0.01)
+    subprocess.run(f"mocp -p", shell=True)  # TODO replace with socket command, but which one?
 
 
 help_scrn: str = "MOCS2 HELP SCREEN"  # TODO
 
-home_dir = os.path.expanduser("~") + "/"
+
 config: dict = {  # default config values that don't rely on any other code for their definition
     "update_rate": 1,  # seconds
     "volume": 50,  # 0-100%
@@ -176,7 +171,7 @@ if os.path.exists(f"{home_dir}.moc/mocs_settings.json"):
 
 class MOC_Socket():
     """https://github.com/jonsafari/mocp/blob/master/protocol.h"""
-    address: str = "/home/yobleck/.moc/socket2"  # TODO config option
+    address: str = f"{home_dir}.moc/socket2"  # TODO config option
     sock = None
 
     @classmethod
@@ -186,7 +181,7 @@ class MOC_Socket():
 
     @classmethod
     def disconnect(cls):
-        cls.sock.shutdown(socket.SHUT_RDWR)
+        cls.sock.shutdown(socket.SHUT_RDWR)  # TODO sock.detach() ?
         cls.sock.close()
 
     @classmethod
@@ -199,10 +194,10 @@ class MOC_Socket():
         cls.sock.recv(3)
 
         ret = cls.sock.recv(4)
-        if ret == b'\x01\x00\x00\x00':  # playing
-            cls.sock.send(b'\x05\x00\x00\x00')  # pause
-        elif ret == b'\x03\x00\x00\x00':  # paused
-            cls.sock.send(b'\x06\x00\x00\x00')  # play
+        if ret == b'\x01\x00\x00\x00':  # playing state
+            cls.sock.send(b'\x05\x00\x00\x00')  # pause song
+        elif ret == b'\x03\x00\x00\x00':  # paused state
+            cls.sock.send(b'\x06\x00\x00\x00')  # play song
 
         cls.disconnect()
 
@@ -210,22 +205,46 @@ class MOC_Socket():
     @tryit
     def stop(cls):
         cls.connect()
-        cls.sock.send(b'\x04\x00\x00\x00')  # stop
-        cls.sock.send(b'\x01\x00\x00\x00')  # clear playlist
+        cls.sock.send(b'\x04\x00\x00\x00')  # stop song
+        cls.sock.send(b'\x3e\x00\x00\x00')  # clear queue
         cls.disconnect()
 
     @classmethod
     @tryit
     def next_song(cls):
         cls.connect()
-        cls.sock.send(b'\x10\x00\x00\x00')  # next
+        cls.sock.send(b'\x10\x00\x00\x00')  # next song
         cls.disconnect()
 
     @classmethod
     @tryit
     def prev_song(cls):
         cls.connect()
-        cls.sock.send(b'\x20\x00\x00\x00')  # prev
+        cls.sock.send(b'\x20\x00\x00\x00')  # prev song
+        cls.disconnect()
+
+    @classmethod
+    @tryit
+    def send_song_to_queue(cls, song):
+        song = song.encode()
+        cls.connect()
+        cls.sock.send(b'\x3b\x00\x00\x00')  # send to queue
+        cls.sock.send(struct.pack('I', len(song)))  # song file path size
+        cls.sock.send(song)  # song file path
+        cls.disconnect()
+
+    @classmethod
+    @tryit
+    def clear_queue(cls):
+        cls.connect()
+        cls.sock.send(b'\x3e\x00\x00\x00')  # clear queue
+        cls.disconnect()
+
+    @classmethod
+    @tryit
+    def play_test(cls):
+        cls.connect()
+        cls.sock.send(b'\x00\x00\x00\x00')
         cls.disconnect()
 
 
@@ -242,7 +261,7 @@ class UI():
     sort_reversed: bool = config["sort_reversed"]
 
     song_list: list = folder_sort(current_folder, sort_mode, sort_reversed)
-    list_slice: tuple = (0, scrn_size[1] - 6)  # (top, bottom). - x for progress bar
+    list_slice: list = [0, scrn_size[1] - 6]  # (top, bottom). - x for progress bar
     selected_song: int = 0  # between 0 and len(song_list)
     current_song_info: dict = moc_sync()
     volume: int = config["volume"]
@@ -279,10 +298,11 @@ class UI():
         # https://cloford.com/resources/charcodes/utf-8_box-drawing.htm
         cls.current_song_info = moc_sync()
 
-        # status and name of song # TODO use cls.current_song_info['File'] if Title is empty
+        # status and name of song
+        title_or_file = cls.current_song_info['Title'] or cls.current_song_info['File']
         print(f"\x1b[{cls.scrn_size[1] - 2};0H\x1b[K{u_esc + config['main_clr'] + 'm'}"
-              f"│{cls.current_song_info['State']} > {cls.current_song_info['Title']}"
-              f"{' ' * (cls.scrn_size[0] - len(cls.current_song_info['State']) - wcwidth.wcswidth(cls.current_song_info['Title']) - 5)}"
+              f"│{cls.current_song_info['State']} > {title_or_file}"
+              f"{' ' * (cls.scrn_size[0] - len(cls.current_song_info['State']) - wcwidth.wcswidth(title_or_file) - 5)}"
               f"│{u_esc + config['main_clr'] + 'm'}")
         # sort mode TODO other info
         print(f"\x1b[{cls.scrn_size[1] - 1};0H\x1b[K│{u_esc}{config['misc_clr'] + 'm'}"
@@ -317,10 +337,10 @@ class UI():
         # handles scrolling the entire screen to keep cursor visible
         if cls.selected_song > cls.list_slice[1]:  # scroll down
             shift = cls.selected_song - cls.list_slice[1]
-            cls.list_slice = (cls.list_slice[0] + shift, cls.list_slice[1] + shift)
+            cls.list_slice = [cls.list_slice[0] + shift, cls.list_slice[1] + shift]
         elif cls.selected_song < cls.list_slice[0]:  # scroll up
             shift = cls.list_slice[0] - cls.selected_song
-            cls.list_slice = (cls.list_slice[0] - shift, cls.list_slice[1] - shift)
+            cls.list_slice = [cls.list_slice[0] - shift, cls.list_slice[1] - shift]
 
     @classmethod
     def enter(cls) -> None:
@@ -375,12 +395,12 @@ config.update({  # default config values that have to be defined after UI()
                   # "c": clear playlist?
                   # "?": help screen
                   # "/": search function?
-                  # "T": partial(MOC_Socket.stop),  # testing
+                  "T": partial(MOC_Socket.clear_queue),  # testing
                   },
 })
 
 
-class RepeatTimer(threading.Timer):  # TODO sync timer to song start?
+class RepeatTimer(threading.Timer):  # TODO sync timer to song start? EV_AUDIO_START/STOP
     def run(self):
         while not self.finished.wait(self.interval):
             self.function(*self.args, **self.kwargs)
