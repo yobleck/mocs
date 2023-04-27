@@ -3,7 +3,6 @@ import itertools
 import json
 import os
 import signal
-import shlex
 import socket
 import struct
 import subprocess
@@ -135,13 +134,14 @@ def folder_sort(folder: str, sort_mode: str, reverse: bool = False) -> list:
 def add_songs_to_playlist_and_play(songs: list, start_pos: int, folder: str) -> None:
     # TODO remove starting pos var? and use splice when calling
     # TODO loop around
+    # TODO fix first song not playing until done. make this function a background thread (threading or multiprocessing?)
     MOC_Socket.clear_queue()
-    time.sleep(0.01)  # TODO replace with read from socket?
+    time.sleep(0.001)  # TODO replace with read from socket?
     for s in songs[start_pos:]:
         if s[-1] != "/" and s[-4:] != ".m3u":
-            MOC_Socket.send_song_to_queue(folder + s)
-            time.sleep(0.01)
-    subprocess.run(f"mocp -p", shell=True)  # TODO replace with socket command, but which one?
+            MOC_Socket.enqueue_song(folder + s)
+            time.sleep(0.001)
+    MOC_Socket.play_first()
 
 
 help_scrn: str = "MOCS2 HELP SCREEN"  # TODO
@@ -159,6 +159,7 @@ config: dict = {  # default config values that don't rely on any other code for 
     "m3u_clr": "34",
     "bg_clr": "40",  # background color uses the background color code
     "misc_clr": "36",
+    # TODO volume seek and big scroll increments
 }
 # parse config file
 if os.path.exists(f"{home_dir}.moc/mocs_settings.json"):
@@ -206,6 +207,10 @@ class MOC_Socket():
     def stop(cls):
         cls.connect()
         cls.sock.send(b'\x04\x00\x00\x00')  # stop song
+        # wait for server state to finish updating
+        while cls.sock.recv(1) != b'\x01':
+            pass
+        cls.sock.recv(3)
         cls.sock.send(b'\x3e\x00\x00\x00')  # clear queue
         cls.disconnect()
 
@@ -218,19 +223,22 @@ class MOC_Socket():
 
     @classmethod
     @tryit
-    def prev_song(cls):
+    def prev_song(cls):  # BUG doesn't work with queue
         cls.connect()
         cls.sock.send(b'\x20\x00\x00\x00')  # prev song
         cls.disconnect()
 
     @classmethod
     @tryit
-    def send_song_to_queue(cls, song):
+    def enqueue_song(cls, song):
         song = song.encode()
         cls.connect()
         cls.sock.send(b'\x3b\x00\x00\x00')  # send to queue
         cls.sock.send(struct.pack('I', len(song)))  # song file path size
         cls.sock.send(song)  # song file path
+        while cls.sock.recv(4) != b'\xff\xff\xff\xff':  # clear out return info from server
+            pass
+        cls.sock.recv(16)
         cls.disconnect()
 
     @classmethod
@@ -242,9 +250,42 @@ class MOC_Socket():
 
     @classmethod
     @tryit
-    def play_test(cls):
+    def set_vol(cls, val):
+        """amount to adjust volume by"""
         cls.connect()
-        cls.sock.send(b'\x00\x00\x00\x00')
+        # get current vol
+        cls.sock.send(b'\x1a\x00\x00\x00')
+        while cls.sock.recv(1) != b'\x06':
+            pass
+        cls.sock.recv(3)
+        # adjust vol
+        vol = struct.unpack("I", cls.sock.recv(4))[0] + val
+        # clamp vol
+        if vol < 0:
+            vol = 0
+        elif vol > 100:
+            vol = 100
+        cls.sock.send(b'\x1b\x00\x00\x00')  # set volume
+        cls.sock.send(struct.pack('I', vol))  # volume value
+        cls.disconnect()
+
+    @classmethod
+    @tryit
+    def seek(cls, sec):
+        """amount to adjust volume by"""
+        cls.connect()
+        cls.sock.send(b'\x12\x00\x00\x00')  # set volume
+        cls.sock.send(struct.pack('i', sec))  # volume value
+        cls.disconnect()
+        # UI.draw_status_bar()  # BUG flickering when holding key
+
+    @classmethod
+    @tryit
+    def play_first(cls):
+        cls.connect()
+        cls.sock.send(b'\x06\x00\x00\x00')  # play
+        cls.sock.send(b'\x00\x00\x00\x00')  # AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        cls.sock.send(b'\x00\x00\x00\x00')  # AAAAAAAAAAAAAAAAAAAAAHHHHHHHHHHHHHHHHHHHHHH
         cls.disconnect()
 
 
@@ -266,7 +307,6 @@ class UI():
     current_song_info: dict = moc_sync()
     volume: int = config["volume"]
 
-    # TODO colors
     @classmethod
     def draw_list(cls) -> None:
         """draw borders, slice of list of files, highlight currently playing and selected, play/pause/stop state
@@ -313,7 +353,7 @@ class UI():
               f"├─┤{cls.current_song_info['CurrentTime']} {cls.current_song_info['TimeLeft']}"
               f" [{cls.current_song_info['TotalTime']}] {cls.progress_bar()}")
         print(f"\x1b[K{u_esc}{config['main_clr'] + 'm'}└{'─' * (cls.scrn_size[0] - 2)}┘{u_esc + config['main_clr'] + 'm'}", end="")
-        sys.stdout.flush()  # BUG flickering caused by last line?
+        sys.stdout.flush()  # BUG flickering caused by last line? replace end with ANSI go up line?
 
     @classmethod
     def progress_bar(cls) -> str:
@@ -372,30 +412,32 @@ class UI():
 
 config.update({  # default config values that have to be defined after UI()
     "key_binds": {" ": partial(MOC_Socket().play_pause),  # play/pause
-                  # " ": partial(subprocess.run, "mocp -G", shell=True),
                   "s": partial(MOC_Socket.stop),  # stop and clear playlist
-                  # "s": partial(subprocess.run, "mocp -s; mocp -c", shell=True),
+
                   "n": partial(MOC_Socket.next_song),  # next song
-                  # "n": partial(subprocess.run, "mocp -f", shell=True),
+                  # BUG back only works with playlist, not queue
                   "b": partial(MOC_Socket.prev_song),  # previous song
-                  # "b": partial(subprocess.run, "mocp -n", shell=True),
-                  # TODO figure out how the volume byte format works
-                  ",": partial(subprocess.run, "mocp -v -5", shell=True),  # vol -5%
-                  ".": partial(subprocess.run, "mocp -v +5", shell=True),  # vol +5%
+
+                  ",": partial(MOC_Socket.set_vol, -5),  # vol -5%
+                  ".": partial(MOC_Socket.set_vol, 5),  # vol +5%
+
                   "up": partial(UI.scroll, -1),  # scroll up
                   "dn": partial(UI.scroll, 1),  # scroll down
-                  # TODO figure out how the seek byte format works
-                  "lf": partial(subprocess.run, "mocp -k -1", shell=True),  # seek -1 s
-                  "rt": partial(subprocess.run, "mocp -k 1", shell=True),  # seek +1 s
                   "pgup": partial(UI.scroll, -10),  # scroll up 10 at a time
                   "pgdn": partial(UI.scroll, 10),  # scroll down 10 at a time
-                  "\n": partial(UI.enter),  # play song or enter folder
+
+                  "lf": partial(MOC_Socket.seek, -2),  # seek -1 s
+                  "rt": partial(MOC_Socket.seek, 2),  # seek +1 s
+
+                  "\n": partial(UI.enter),  # play song or enter folder. TODO handle .m3u
+
                   "m": partial(UI.cycle_sort),  # cycle sort modes
                   "M": partial(UI.reverse_sort),  # toggle sort reverse
                   # "c": clear playlist?
                   # "?": help screen
                   # "/": search function?
-                  "T": partial(MOC_Socket.clear_queue),  # testing
+                  "T": partial(MOC_Socket.play_first),  # testing
+                  "Y": partial(MOC_Socket.seek, 5),  # testing
                   },
 })
 
